@@ -102,7 +102,7 @@ class ARConv(nn.Module):
         m = self.m_conv(x)
         bias = self.b_conv(x)
         offset = self.p_conv(x * 100)
-        l = self.l_conv(offset) * (hw_range[1] - 1) + 1  # b, 1, h, w
+        l = self.l_conv(offset) * (hw_range[1] - 1) + 1  # b, 1, h, w   the relationship between feture map and height and width
         w = self.w_conv(offset) * (hw_range[1] - 1) + 1  # b, 1, h, w
         if epoch <= 100:
             mean_l = l.mean(dim=0).mean(dim=1).mean(dim=1)
@@ -127,6 +127,8 @@ class ARConv(nn.Module):
 
         N = N_X * N_Y
         # print(N_X, N_Y)
+        # Đoạn này xử lý giá trị pixel (l, w là các map giá trị, được lặp lại N lần để chuẩn bị 
+        # cho việc tính offset toạ độ sampling)
         l = l.repeat([1, N, 1, 1])
         w = w.repeat([1, N, 1, 1])
         offset = torch.cat((l, w), dim=1)
@@ -181,12 +183,13 @@ class ARConv(nn.Module):
         x_q_rt = self._get_x_q(x, q_rt, N)
         # (b, c, h, w, N)
         x_offset = (
-                g_lt.unsqueeze(dim=1) * x_q_lt
+                  g_lt.unsqueeze(dim=1) * x_q_lt
                 + g_rb.unsqueeze(dim=1) * x_q_rb
                 + g_lb.unsqueeze(dim=1) * x_q_lb
                 + g_rt.unsqueeze(dim=1) * x_q_rt
         )
         x_offset = self._reshape_x_offset(x_offset, N_X, N_Y)
+        print(x_offset)
         x_offset = self.dropout2(x_offset)
         x_offset = self.convs[self.i_list.index(N_X * 10 + N_Y)](x_offset)
         out = x_offset * m + bias
@@ -212,9 +215,30 @@ class ARConv(nn.Module):
         return p_0
  
     def _get_p(self, offset, dtype, n_x, n_y):
-        N, h, w = offset.size(1) // 2, offset.size(2), offset.size(3)
-        L, W = offset.split([N, N], dim=1)
-        L = L / n_x
+        """
+        Hàm này tính toán tọa độ sampling p cho từng điểm trong kernel biến thiên (adaptive kernel).
+
+        Tham số:
+            offset: tensor (b, 2N, h, w) - offset học được cho từng điểm sampling (N là số điểm sampling)
+            dtype: kiểu dữ liệu torch (thường là torch.float32)
+            n_x, n_y: số điểm sampling theo chiều x và y (kernel size)
+
+        Các bước thực hiện:
+        1. Tính N, h, w từ offset (N là số điểm sampling, h và w là kích thước feature map).
+        2. Chia offset thành 2 phần: L (offset theo chiều x) và W (offset theo chiều y), mỗi phần có shape (b, N, h, w).
+        3. Chuẩn hóa offset L và W theo kích thước kernel (chia cho n_x, n_y).
+        4. Ghép lại thành offsett (b, 2N, h, w).
+        5. Tạo p_n: vị trí tương đối của từng điểm sampling trong kernel (shape (1, 2N, 1, 1)), rồi lặp lại cho toàn bộ spatial (h, w).
+        6. Tạo p_0: vị trí gốc của từng điểm sampling trên feature map (shape (1, 2N, h, w)).
+        7. Tính p = p_0 + offsett * p_n: vị trí sampling cuối cùng (đã cộng offset).
+        8. Trả về p.
+
+        Kết quả trả về:
+            p: tensor (b, 2N, h, w) - tọa độ sampling cuối cùng cho từng điểm kernel tại mỗi vị trí (h, w)
+        """
+        N, h, w = offset.size(1) // 2, offset.size(2), offset.size(3)  
+        L, W = offset.split([N, N], dim=1)  # Devide feture map of L and W 
+        L = L / n_x 
         W = W / n_y
         offsett = torch.cat([L, W], dim=1)
         p_n = self._get_p_n(N, dtype, n_x, n_y)
