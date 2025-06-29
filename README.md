@@ -1,4 +1,4 @@
-# Convolution-kernel-adaptive
+# Convolution adaptive kernel
 None
 This repository demonstrates adaptive convolution kernels for deep learning models.  
 It contains code and examples for using convolutional layers with dynamically changing kernel shapes or sizes, which can improve model flexibility and performance in various computer vision tasks.
