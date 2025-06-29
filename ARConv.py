@@ -182,6 +182,15 @@ class ARConv(nn.Module):
         x_q_lb = self._get_x_q(x, q_lb, N)
         x_q_rt = self._get_x_q(x, q_rt, N)
         # (b, c, h, w, N)
+        # Tại sao phải nội suy?
+        # Vì các điểm sampling p thường không rơi đúng vào vị trí pixel integer trên feature map,
+        # nên ta cần nội suy bilinear từ 4 điểm lân cận (q_lt, q_rb, q_lb, q_rt) để lấy giá trị tại p.
+        # Kết quả của việc nội suy bilinear là giá trị đặc trưng (feature value) tại các vị trí sampling p,
+        # được tính bằng tổng có trọng số (theo kernel bilinear) của 4 điểm lân cận (q_lt, q_rb, q_lb, q_rt).
+        # x_offset chứa các giá trị feature đã được nội suy tại từng điểm sampling p trên feature map.
+        # x_offset ở đây là feature map đã được nội suy bilinear từ 4 điểm lân cận,
+        # giá trị của nó không phải là số nguyên mà là giá trị thực (float),
+        # thể hiện đặc trưng tại vị trí sampling p trên feature map gốc.
         x_offset = (
                   g_lt.unsqueeze(dim=1) * x_q_lt
                 + g_rb.unsqueeze(dim=1) * x_q_rb
@@ -265,8 +274,23 @@ class ARConv(nn.Module):
  
     @staticmethod
     def _reshape_x_offset(x_offset, n_x, n_y):
+        """
+        Hàm này 'làm rộng' (expand) chiều h và w của x_offset bằng cách nhân với n_x và n_y.
+        Lý do: 
+        - x_offset có shape (b, c, h, w, N), với N = n_x * n_y là số điểm sampling trong kernel.
+        - Để thực hiện tích chập với kernel biến thiên (adaptive kernel), cần sắp xếp lại các giá trị sampling này thành một feature map lớn hơn,
+          trong đó mỗi vị trí (h, w) trên feature map gốc sẽ được 'trải' thành một lưới n_x x n_y điểm sampling.
+        - Việc reshape này giúp chuyển x_offset từ (b, c, h, w, N) thành (b, c, h * n_x, w * n_y), 
+          tức là mỗi điểm (h, w) trên feature map gốc sẽ tương ứng với một vùng (n_x, n_y) trên feature map mới.
+        - Điều này cho phép thực hiện các phép toán tích chập tiếp theo như với một feature map thông thường.
+
+        """
         b, c, h, w, N = x_offset.size()
-        x_offset = torch.cat([x_offset[..., s:s + n_y].contiguous().view(b, c, h, w * n_y) for s in range(0, N, n_y)],
-                             dim=-1)
+        # Gom các điểm sampling theo từng hàng của kernel (n_y điểm một hàng), rồi ghép lại theo chiều w
+        x_offset = torch.cat(
+            [x_offset[..., s:s + n_y].contiguous().view(b, c, h, w * n_y) for s in range(0, N, n_y)],
+            dim=-1
+        )
+        # Reshape lại thành (b, c, h * n_x, w * n_y)
         x_offset = x_offset.contiguous().view(b, c, h * n_x, w * n_y)
         return x_offset
