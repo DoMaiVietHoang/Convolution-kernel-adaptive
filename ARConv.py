@@ -50,7 +50,7 @@ class ARConv(nn.Module):
             nn.LeakyReLU(),
         )
         self.l_conv = nn.Sequential(
-            nn.Conv2d(inc, 1, kernel_size=3, padding=1, stride=stride),
+            nn.Conv2d(inc, 1, kernel_size=3, padding=1, stride=stride), #Only character of width or height
             nn.BatchNorm2d(1),
             nn.LeakyReLU(),
             nn.Dropout2d(0),
@@ -67,8 +67,8 @@ class ARConv(nn.Module):
             nn.BatchNorm2d(1),
             nn.Sigmoid()
         )
-        self.dropout1 = nn.Dropout(0.3)
-        self.dropout2 = nn.Dropout2d(0.3)
+        self.dropout1     = nn.Dropout(0.3)
+        self.dropout2     = nn.Dropout2d(0.3)
         self.hook_handles = []
         self.hook_handles.append(self.m_conv[0].register_full_backward_hook(self._set_lr))
         self.hook_handles.append(self.m_conv[1].register_full_backward_hook(self._set_lr))
@@ -91,8 +91,8 @@ class ARConv(nn.Module):
  
     def remove_hooks(self):
         for handle in self.hook_handles:
-            handle.remove()  # 移除钩子函数
-        self.hook_handles.clear()  # 清空句柄列表
+            handle.remove()  
+        self.hook_handles.clear()  
  
     def forward(self, x, epoch, hw_range):
         assert isinstance(hw_range, list) and len(hw_range) == 2, "hw_range should be a list with 2 elements, represent the range of h w"
